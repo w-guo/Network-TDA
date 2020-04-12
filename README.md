@@ -13,6 +13,6 @@ This repository contains the code for the algorithms to construct and update **c
 With the information revealed by community trees and the corresponding persistence diagrams, our proposed approach is able to detect clique communities and keep track of the major structural changes during their evolution given a stability threshold (TSN bound).
 
 <p align="center">
-    <img src="https://github.com/w-guo/Network-TDA/blob/master/images/sms_evolution.png" width="900"> <br />
-    <em> Network evolution for the short-msg dataset</em>
+    <img src="https://github.com/w-guo/Network-TDA/blob/master/images/sms_evolution.png" width="840"> <br />
+    <em> Network evolution for the short message correspondence dataset</em>
 </p>
