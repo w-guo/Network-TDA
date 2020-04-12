@@ -9,170 +9,173 @@
 #define TRIE_H_
 
 #include <iostream>
-#include <vector>
-#include <map>
-#include <list>
 
 using namespace std;
-typedef vector<int> MCVec;
-typedef map<int, MCVec> MCPair;
 
-// define a global variable to save the multiple outputs from the recursive function
-MCPair * MCP = new MCPair();
+// define a global variable to save the multiple outputs from the recursive
+// function
+TIntIntVH *MCVH = new TIntIntVH();
 
 class TrieNode {
 
 public:
-	TrieNode(TrieNode * parent, int vid)
-		: key(vid)
-		, value(-1)
-		, par(parent)
-		, chi()
-	{}
+  TrieNode(TrieNode *parent, int vId)
+      : key(vId), value(-1), par(parent), next(NULL), chi() {}
 
-	~TrieNode() {
-//		if (!chi.empty()) {
-//			chi.erase(chi.begin(), chi.end());
-//		}
-		par = NULL;
-		chi.clear();
-	}
+  ~TrieNode() {
+    par = NULL;
+    next = NULL;
+    chi.Clr();
+  }
 
-	int key, value;
-	TrieNode * par;
-	map<int, TrieNode *> chi;
+  int key, value;
+  TrieNode *par, *next;
+  THash<TInt, TrieNode *> chi;
 };
 
 class Trie {
 
 public:
-	Trie(int vid){
-		root = new TrieNode(NULL, vid);
-		NodeList[vid].push_back(root);
-	}
+  Trie(int vId) {
+    root = new TrieNode(NULL, vId);
+    NodeList.AddDat(vId, root);
+  }
 
-	~Trie() {			// delete all MCs in the trie
-		destroy(root);
-		NodeList.clear();
-	}
+  ~Trie() { // delete all MCs in the trie
+    destroy(root);
+    NodeList.Clr();
+  }
 
-	void destroy(TrieNode * cur);
-	void addMC(MCVec * MC, int m);
-	void removeMC(MCVec * MC);
-	 int getID(MCVec * MC);
-	void searchDown(TrieNode * cur, MCVec * MC);
-	MCPair* outputMC(TrieNode * cur);
+  void destroy(TrieNode *cur);
+  void addMC(TIntV &MCV, int m);
+  void removeMC(TIntV &MCV);
+  int getID(TIntV &MCV);
+  void searchDown(TrieNode *cur, TIntV &MCV);
+  TIntIntVH *outputMC(TrieNode *cur);
 
 public:
-	TrieNode * root;
-	map<int, list<TrieNode *>> NodeList;
+  TrieNode *root;
+  THash<TInt, TrieNode *> NodeList;
 };
 
-//Delete the trie following post-order traversal
-void Trie::destroy(TrieNode * cur) {
-	if (cur == NULL)
-		return;
-	if (!cur->chi.empty()) {
-		for (auto it : cur->chi) {
-			destroy(it.second);
-		}
-	}
-	delete cur;
+// Delete the trie following post-order traversal
+void Trie::destroy(TrieNode *cur) {
+  if (cur == NULL)
+    return;
+  if (!cur->chi.Empty()) {
+    for (THashKeyDatI<TInt, TrieNode *> it = cur->chi.BegI(); !it.IsEnd();
+         it++) {
+      destroy(it.GetDat());
+    }
+  }
+  delete cur;
 }
 
+void Trie::addMC(TIntV &MCV, int m) {
+  // start from root node
+  TrieNode *cur = root;
 
-void Trie::addMC(MCVec * MC, int m) {
-	// start from root node
-	TrieNode * cur = root;
-
-	for (auto it = MC->begin()+1; it != MC->end(); it++) {
-		// create a new node if path doesn't exists
-		if (cur->chi.find(*it) == cur->chi.end()) {
-			cur->chi[*it] = new TrieNode(cur, *it);
-			// add this new node to the NodeList
-			NodeList[*it].push_back(cur->chi[*it]);
-		}
-		// go to next node
-		cur = cur->chi[*it];
-	}
-	// current node is now the leaf node
-	cur->value = m;
+  for (int i = 1; i < MCV.Len(); i++) {
+    int vId = MCV[i];
+    // create a new node if path doesn't exists
+    if (!cur->chi.IsKey(vId)) {
+      TrieNode *node = new TrieNode(cur, vId);
+      cur->chi.AddDat(vId, node);
+      // add this new node to the NodeList
+      if (!NodeList.IsKey(vId)) {
+        NodeList.AddDat(vId, node);
+      } else {
+        node->next = NodeList.GetDat(vId);
+        NodeList.GetDat(vId) = node;
+      }
+    }
+    // go to next node
+    cur = cur->chi.GetDat(vId);
+  }
+  // current node is now the leaf node
+  cur->value = m;
 }
 
-
-void Trie::removeMC(MCVec * MC) {
-	TrieNode * cur = root;
-	// move down to the leaf node of this MC
-	for (auto it = MC->begin()+1; it != MC->end(); it++) {
-		if (cur->chi.find(*it) == cur->chi.end())
-			return;
-		cur = cur->chi[*it];
-	}
-
-	// walk up looking for nodes to remove
-	while (cur->chi.empty()) {
-		int cKey = cur->key;
-		// remove this node from the NodeList
-		NodeList[cKey].remove(cur);
-		if (NodeList[cKey].empty()) {
-			NodeList.erase(cKey);
-		}
-		// remove this node from this trie
-		if (cur->par != NULL) {
-			cur = cur->par;
-			delete cur->chi[cKey];
-			cur->chi[cKey] = NULL;
-			cur->chi.erase(cKey);
-		}
-		else {
-			delete cur;
-			cur = NULL;
-			return;
-		}
-	}
-
+void Trie::removeMC(TIntV &MCV) {
+  TrieNode *cur = root;
+  // move down to the leaf node of this MCV
+  for (int i = 1; i < MCV.Len(); i++) {
+    int vId = MCV[i];
+    if (!cur->chi.IsKey(vId))
+      return;
+    cur = cur->chi.GetDat(vId);
+  }
+  cur->value = -1;
+  // walk up looking for nodes to remove
+  while (cur->chi.Empty()) {
+    int cKey = cur->key;
+    // remove this node from the NodeList
+    TrieNode *node = NodeList.GetDat(cKey);
+    if (node == cur) {
+      if (node->next == NULL) {
+        NodeList.DelKey(cKey);
+      } else {
+        NodeList.GetDat(cKey) = node->next;
+      }
+    }
+    while (node != NULL) {
+      if (node->next == cur) {
+        node->next = cur->next;
+        break;
+      }
+      node = node->next;
+    }
+    // remove this node from this trie
+    if (cur->par != NULL) {
+      cur = cur->par;
+      delete cur->chi.GetDat(cKey);
+      cur->chi.GetDat(cKey) = NULL;
+      cur->chi.DelKey(cKey);
+    } else {
+      delete cur;
+      cur = NULL;
+      return;
+    }
+  }
 }
 
-
-int Trie::getID(MCVec * MC) {
-	TrieNode * cur = root;
-	// move down to the leaf node of this MC
-	for (auto it = MC->begin()+1; it != MC->end(); it++) {
-		if (cur->chi.find(*it) == cur->chi.end())
-			return -1;
-		cur = cur->chi[*it];
-	}
-	return cur->value;
+int Trie::getID(TIntV &MCV) {
+  TrieNode *cur = root;
+  // move down to the leaf node of this MCV
+  for (int i = 1; i < MCV.Len(); i++) {
+    int vId = MCV[i];
+    if (!cur->chi.IsKey(vId))
+      return -1;
+    cur = cur->chi.GetDat(vId);
+  }
+  return cur->value;
 }
 
-
-void Trie::searchDown(TrieNode * cur, MCVec * MC) {
-	if (cur->chi.empty()) {
-		MCP->insert(make_pair(cur->value, *MC));
-		return;
-		}
-	else {
-		for (auto it : cur->chi) {
-			MC->push_back(it.first);
-			searchDown(it.second, MC);
-			MC->pop_back();
-		}
-	}
+void Trie::searchDown(TrieNode *cur, TIntV &MCV) {
+  if (cur->chi.Empty()) {
+    MCVH->AddDat(cur->value, MCV);
+    return;
+  } else {
+    for (THashKeyDatI<TInt, TrieNode *> it = cur->chi.BegI(); !it.IsEnd();
+         it++) {
+      MCV.Add(it.GetKey());
+      searchDown(it.GetDat(), MCV);
+      MCV.DelLast();
+    }
+  }
 }
 
-
-MCPair * Trie::outputMC(TrieNode * cur) {
-	MCP->clear();
-	MCVec * MC = new MCVec();
-	TrieNode * pre = cur;
-	while (pre != NULL) {
-		MC->push_back(pre->key);
-		pre = pre->par;
-	}
-	reverse(MC->begin(), MC->end());
-	searchDown(cur, MC);
-
-	return MCP;
+TIntIntVH *Trie::outputMC(TrieNode *cur) {
+  MCVH->Clr();
+  TIntV MCV;
+  TrieNode *pre = cur;
+  while (pre != NULL) {
+    MCV.Add(pre->key);
+    pre = pre->par;
+  }
+  MCV.Reverse();
+  searchDown(cur, MCV);
+  return MCVH;
 }
 
 #endif /* TRIE_H_ */

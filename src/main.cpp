@@ -1,202 +1,211 @@
 //============================================================================
-// Name        : TDA_networks.cpp
-// Author      : 
-// Version     :
-// Copyright   : Your copyright notice
+// Author      :
 // Description :
 //============================================================================
 
 #include <iostream>
-#include "CliqueGraph.h"
+#include "Snap.h"
+#include "CPM.h"
+
 using namespace std;
 
+int main(int argc, char *argv[]) {
+  Env = TEnv(argc, argv, TNotify::StdNotify);
+  Env.PrepArgs(
+      TStr::Fmt("Network community detection. build: %s, %s. Time: % s ",
+                __TIME__, __DATE__, TExeTm::GetCurTm()));
+  TTmProfiler Profiler;
 
+  int TimerId = Profiler.AddTimer("Profiler");
+  int TimerAll = Profiler.AddTimer("ProfilerAll");
 
-//PD * buildCT(mapNBVer * mLV, mapNBVer * mHV);
-int main() {
+  const TStr InFNm = Env.GetIfArgPrefixStr("-i:", "../data/sms01.txt",
+                                           "Input graph (undirected graph) ");
 
-	MCVec mc1 = {1, 2, 3, 6};
-	MCVec mc2 = {2, 3, 4, 5, 6};
-	MCVec mc3 = {4, 5, 7, 12};
-	MCVec mc4 = {5, 7, 8, 9};
-	MCVec mc5 = {6, 10, 11};
-	MCVec mc6 = {1, 2, 6};
-	MCVec mc7 = {4, 5, 7};
-	MCVec mc8 = {6, 10};
-	MCVec mc9 = {11};
-	MCVec mc10 = {12};
-	MCVec mc11 = {5, 6, 9};
+  // First load the temporal evolving network
+  PTimeNENet FullNENet = TTimeNENet::LoadEdgeTm(InFNm, 1, 2, 3, ssfWhiteSep);
+  TTimeNet::TTmBucketV TmBucketV;
+  TTmUnit TmUnit = tmuWeek;
+  FullNENet->GetEdgeTmBuckets(TmUnit, TmBucketV);
+  int startTm = 7;
+  int endTm = 9;
+  // int endTm = TmBucketV.Len();
 
-//	Trie* T1 = new Trie(1);
-//	T1->addMC(&mc1, 10);
-//	Trie* T2 = new Trie(2);
-//	T2->addMC(&mc2, 11);
-//	Trie* T3 = new Trie(4);
-//	T3->addMC(&mc3, 12);
-//	Trie* T4 = new Trie(5);
-//	T4->addMC(&mc4, 13);
-//	Trie* T5 = new Trie(6);
-//	T5->addMC(&mc5, 14);
+  TIntPrV PrevEdgeV, CurEdgeV, NewEdgeV;
+  TIntV EdgeLstV;
+  for (int t = 0; t <= startTm; t++) {
+    printf("edgelist length: %d\n", EdgeLstV.Len());
+    EdgeLstV.AddV(TmBucketV[t].NIdV);
+  }
+  // get the initial graph G_0
+  PUNGraph PrevGraph = TSnap::ConvertESubGraph<PUNGraph>(FullNENet, EdgeLstV);
+  // delete self-edges
+  TSnap::DelSelfEdges(PrevGraph);
+  TSnap::DelZeroDegNodes(PrevGraph);
+  if (PrevGraph->GetEdges() == 0) {
+    printf(
+        "No edge exists in the network. Choose another starting time period.");
+    return 0;
+  }
+  printf("***%d/%d: by %s (V,E) = (%d,%d)\n", startTm + 1, TmBucketV.Len(),
+         TmBucketV[startTm].BegTm.GetStr(TmUnit).CStr(), PrevGraph->GetNodes(),
+         PrevGraph->GetEdges());
 
-	mapTrie * mTrie = new mapTrie();
-//	mTrie->insert(make_pair(T1->root->key, T1));
-//	mTrie->insert(make_pair(T2->root->key, T2));
-//	mTrie->insert(make_pair(T3->root->key, T3));
-//	mTrie->insert(make_pair(T4->root->key, T4));
-//	mTrie->insert(make_pair(T5->root->key, T5));
+  // reserve memory for edge values in the vector
+  PrevEdgeV.Gen(PrevGraph->GetEdges(), 0);
+  for (TUNGraph::TEdgeI EI = PrevGraph->BegEI(); EI < PrevGraph->EndEI();
+       EI++) {
+    PrevEdgeV.Add(TIntPr(EI.GetSrcNId(), EI.GetDstNId()));
+  }
 
-	mapNBVer * mLV = new mapNBVer();
-	list<int> L1({1});
-	list<int> L2({1, 2});
-	list<int> L3({2, 3});
-	list<int> L4({2, 3, 4});
-	list<int> L5({1, 2, 3, 4, 5});
-	list<int> L6({4, 5});
-	list<int> L7({5, 7});
-	list<int> L8({5, 7, 8});
-	list<int> L9({6});
-	list<int> L10({6, 10});
-	list<int> L11({4, 5, 7});
+  // sort the vector
+  PrevEdgeV.Sort();
 
-	mLV->insert(make_pair(2, L1));
-	mLV->insert(make_pair(3, L2));
-	mLV->insert(make_pair(4, L3));
-	mLV->insert(make_pair(5, L4));
-	mLV->insert(make_pair(6, L5));
-	mLV->insert(make_pair(7, L6));
-	mLV->insert(make_pair(8, L7));
-	mLV->insert(make_pair(9, L8));
-	mLV->insert(make_pair(10, L9));
-	mLV->insert(make_pair(11, L10));
-	mLV->insert(make_pair(12, L11));
+  Profiler.ResetTimer(TimerAll);
+  Profiler.StartTimer(TimerAll);
 
-	MCSet newMCs;
-	mapMC mMC;
-	int nlevels = 5;
+  // build the initial community tree
+  TIntTrieH TrieH;
+  CommunityTree *CT = new CommunityTree();
+  CT->time = startTm;
 
-	CliqueGraph * CG = new CliqueGraph(nlevels);
+  CliqueGraph *CG = CT->buildCT(PrevGraph, TrieH);
+  TIntPrV *P = CG->generatePD();
+  THash<TInt, TVec<TIntV>> cmtyH;
+  CG->convertCommunities(TrieH, cmtyH);
+  Profiler.StopTimer(TimerAll);
+  printf("run time: %f\n", Profiler.GetTimerSec(TimerAll));
+  cmtyH.Defrag();
 
-	newMCs.push_back(mc1);
-	newMCs.push_back(mc2);
-	newMCs.push_back(mc3);
-	newMCs.push_back(mc4);
-	newMCs.push_back(mc5);
+  int level = 5;
+  TVec<TIntV> cmtyVV = cmtyH.GetDat(level);
+  saveTxt(cmtyVV, TStr::Fmt("t%du.txt", startTm + 1));
+  for (int i = 0; i < CG->forests.Len(); i++) {
+    printf("%d communities at level %d\n", CG->forests[i].Len(), i + 1);
+    for (THashKeyDatI<TInt, ETNode *> fIt = CG->forests[i].BegI();
+         fIt < CG->forests[i].EndI(); fIt++) {
+      cout << fIt.GetKey() << " ";
+    }
+    cout << endl;
+  }
+  // for (TIntPrV::TIter it = P->BegI(); it < P->EndI(); it++) {
+  //   printf("(b,d): (%d,%d)\n", it->Val1, it->Val2);
+  // }
+  delete P;
+  PrevGraph->Defrag();
 
-//	for (auto it : newMCs) {
-//		for (auto iter : it) {
-//			cout << iter << " ";
-//		}
-//		cout << '\n';
-//	}
+  int windowLen = 3;
 
-	CG->addMCs(&newMCs, mLV, mTrie);
+  if (endTm - startTm - 1 > windowLen) {
+    TSnapQueue<int> TSNUpBdQ;
+    TSNUpBdQ.Gen(windowLen, 0);
+    int TSNUpBdQSum = 0;
 
-	for (int k = nlevels; k > 1; k--) {
-		CG->checkSpanTreeConnection(k);
-	}
+    for (int t = startTm + 1; t < endTm; t++) {
+      printf("edgelist length: %d\n", EdgeLstV.Len());
+      EdgeLstV.AddV(TmBucketV[t].NIdV);
 
-	PD * P = CG->generatePD();
+      PUNGraph CurGraph =
+          TSnap::ConvertESubGraph<PUNGraph>(FullNENet, EdgeLstV);
+      TSnap::DelSelfEdges(CurGraph);
+      TSnap::DelZeroDegNodes(CurGraph);
+      printf("***%d/%d: by %s (V,E) = (%d,%d) ", t + 1, TmBucketV.Len(),
+             TmBucketV[t].BegTm.GetStr(TmUnit).CStr(), CurGraph->GetNodes(),
+             CurGraph->GetEdges());
 
-	for (auto it : *P) {
-        cout << "(b,d): "<< "(" << it.first << "," << it.second << ")" << endl;
-	}
+      CurEdgeV.Gen(CurGraph->GetEdges(), 0);
+      for (TUNGraph::TEdgeI EI = CurGraph->BegEI(); EI < CurGraph->EndEI();
+           EI++) {
+        CurEdgeV.Add(TIntPr(EI.GetSrcNId(), EI.GetDstNId()));
+      }
+      CurEdgeV.Sort();
+      // new edges are stored in NewEdgeV
+      CurEdgeV.Diff(PrevEdgeV, NewEdgeV);
 
-	MCSet delMCs;
-	delMCs.push_back(mc1);
-	delMCs.push_back(mc3);
-	delMCs.push_back(mc5);
+      int TSNUpBd = TSNUpperBound(NewEdgeV);
+      cout << "estimated upper bound for TSN: " << TSNUpBd << endl;
 
-	CG->removeMCs(&delMCs, mTrie);
+      if (TSNUpBdQ.Len() < windowLen) {
+        TSNUpBdQ.Push(TSNUpBd);
+        TSNUpBdQSum += TSNUpBd;
 
-	newMCs.clear();
-	newMCs.push_back(mc6);
-	newMCs.push_back(mc7);
-	newMCs.push_back(mc8);
-	//newMCs.push_back(mc9);
-	//newMCs.push_back(mc10);
+        cmtyVV.Clr();
+        getCPMCommunities(CurGraph, level, cmtyVV);
+        saveTxt(cmtyVV, TStr::Fmt("t%d.txt", t + 1));
+      } else {
+        // if the current estimated upper bound for TSN is no less the moving
+        // mean of the previous window
+        if (TSNUpBd >= TSNUpBdQSum / windowLen) {
+          int preUpdateT = CT->time;
+          cout << "previous update time: " << preUpdateT + 1 << endl;
 
-	EdgeSet * delEdges = new EdgeSet();
+          TIntV lastEdgeLstV;
+          for (int i = 0; i <= preUpdateT; i++) {
+            lastEdgeLstV.AddV(TmBucketV[i].NIdV);
+          }
 
-	delEdges->push_back(make_pair(1, 3));
-	delEdges->push_back(make_pair(4, 12));
-	delEdges->push_back(make_pair(5, 12));
-	delEdges->push_back(make_pair(7, 12));
-	delEdges->push_back(make_pair(6, 11));
-	delEdges->push_back(make_pair(10, 11));
+          PUNGraph LastGraph =
+              TSnap::ConvertESubGraph<PUNGraph>(FullNENet, lastEdgeLstV);
+          TSnap::DelSelfEdges(LastGraph);
+          TSnap::DelZeroDegNodes(LastGraph);
+          printf("last graph (V,E) = (%d,%d) ", LastGraph->GetNodes(),
+                 LastGraph->GetEdges());
 
-	for (auto e : *delEdges) {
-		list<int> & Lv = (*mLV)[e.second];
-		Lv.remove(e.first);
-	}
+          Profiler.ResetTimer(TimerAll);
+          Profiler.StartTimer(TimerAll);
+          TIntPrV LastEdgeV, NewEdgeVFrLastG;
+          LastEdgeV.Gen(LastGraph->GetEdges(), 0);
+          for (TUNGraph::TEdgeI EI = LastGraph->BegEI();
+               EI < LastGraph->EndEI(); EI++) {
+            LastEdgeV.Add(TIntPr(EI.GetSrcNId(), EI.GetDstNId()));
+          }
+          LastEdgeV.Sort();
+          CurEdgeV.Diff(LastEdgeV, NewEdgeVFrLastG);
 
-	for (auto it : *mLV) {
-		cout << "vertex: "<<it.first << endl;
-		for (auto iter : it.second) {
-			cout << iter<< " ";
-		}
-		cout << endl;
-	}
+          // update the community tree
+          CT->updateCTEI(LastGraph, NewEdgeVFrLastG, TrieH, CG);
+          CT->time = t;
 
-	cout << "Number of Tries: " << mTrie->size() << endl;
-	for (auto it : *mTrie) {
-		cout << "Trie " << it.first << endl;
-		if (!it.second->root->chi.empty()) {
-			MCPair * MCP = it.second->outputMC(it.second->root);
-			for (auto iter : *MCP) {
-				cout << "MC id: " << iter.first << endl;
-				for (auto vit : iter.second) {
-					cout << vit << " ";
-				}
-				cout << endl;
-			}
-		}
-	}
+          TIntPrV *P = CG->generatePD();
 
-	CG->addMCs(&newMCs, mLV, mTrie);
+          Profiler.ResetTimer(TimerId);
+          Profiler.StartTimer(TimerId);
+          THash<TInt, TVec<TIntV>> cmtyH;
+          CG->convertCommunities(TrieH, cmtyH);
+          Profiler.StopTimer(TimerId);
+          printf("run time for converting to communities: %f\n",
+                 Profiler.GetTimerSec(TimerId));
+          Profiler.StopTimer(TimerAll);
+          printf("run time: %f\n", Profiler.GetTimerSec(TimerAll));
+          cmtyH.Defrag();
 
-	newMCs.clear();
-	newMCs.push_back(mc11);
+          cmtyVV.Clr();
+          cmtyVV = cmtyH.GetDat(level);
+          saveTxt(cmtyVV, TStr::Fmt("t%du.txt", t + 1));
+          for (int i = 0; i < CG->forests.Len(); i++) {
+            printf("%d communities at level %d\n", CG->forests[i].Len(), i + 1);
+            for (THashKeyDatI<TInt, ETNode *> fIt = CG->forests[i].BegI();
+                 fIt < CG->forests[i].EndI(); fIt++) {
+              cout << fIt.GetKey() << " ";
+            }
+            cout << endl;
+          }
 
-	EdgeSet * newEdges = new EdgeSet();
-	newEdges->push_back(make_pair(6, 9));
-
-	for (auto e : *newEdges) {
-			list<int> & Lv = (*mLV)[e.second];
-			Lv.push_back(e.first);
-	}
-
-	for (auto it : *mLV) {
-			cout << "vertex: "<<it.first << endl;
-			for (auto iter : it.second) {
-				cout << iter<< " ";
-			}
-			cout << endl;
-		}
-	CG->addMCs(&newMCs, mLV, mTrie);
-
-	for (int k = nlevels; k > 1; k--) {
-		CG->checkSpanTreeConnection(k);
-	}
-
-	P = CG->generatePD();
-
-	for (auto it : *P) {
-	        cout << "(b,d): "<< "(" << it.first << "," << it.second << ")" << endl;
-	}
-	return 0;
-
+          delete P;
+          LastGraph->Defrag();
+        } else {
+          cmtyVV.Clr();
+          getCPMCommunities(CurGraph, level, cmtyVV);
+          saveTxt(cmtyVV, TStr::Fmt("t%d.txt", t + 1));
+        }
+        // update the sum of the queue
+        TSNUpBdQSum = TSNUpBdQSum - TSNUpBdQ.Top();
+        TSNUpBdQ.Pop();
+        TSNUpBdQ.Push(TSNUpBd);
+        TSNUpBdQSum += TSNUpBd;
+      }
+      CurGraph->Defrag();
+      PrevEdgeV = CurEdgeV;
+    }
+  }
 }
-
-//PD * buildCT(mapNBVer * mLV, mapNBVer * mHV) {
-//	int m0 = 0;
-//	mapTrie * mTrie;
-//	int nlevels = 5;
-//	CliqueGraph * CG = new CliqueGraph(nlevels);
-//	CG->addMCs(&newMCs, mLV, mTrie);
-//	for (int k = nlevels; k > 1; k--) {
-//		CG->checkSpanTreeConnection(k);
-//	}
-//	PD * P = CG->generatePD();
-//  return P;
-//}
-
